@@ -4,7 +4,7 @@ module Steep
       class Config
         attr_reader :self_type, :class_type, :instance_type, :variable_bounds
 
-        def initialize(self_type:, class_type: nil, instance_type: nil, variable_bounds:)
+        def initialize(self_type:, variable_bounds:, class_type: nil, instance_type: nil)
           @self_type = self_type
           @class_type = class_type
           @instance_type = instance_type
@@ -16,9 +16,9 @@ module Steep
         end
 
         def subst
-          if self_type || class_type || instance_type
-            Substitution.build([], [], self_type: self_type, module_type: class_type, instance_type: instance_type)
-          end
+          return unless self_type || class_type || instance_type
+
+          Substitution.build([], [], self_type: self_type, module_type: class_type, instance_type: instance_type)
         end
 
         def validate_self_type
@@ -34,19 +34,18 @@ module Steep
         end
 
         def validate_fvs(name, type)
-          if type
-            fvs = type.free_variables
-            if fvs.include?(AST::Types::Self.instance)
-              raise "#{name} cannot include 'self' type: #{type}"
-            end
-            if fvs.include?(AST::Types::Instance.instance)
-              Steep.logger.fatal { "#{name} cannot include 'instance' type: #{type}" }
-              raise "#{name} cannot include 'instance' type: #{type}"
-            end
-            if fvs.include?(AST::Types::Class.instance)
-              raise "#{name} cannot include 'class' type: #{type}"
-            end
+          return unless type
+
+          fvs = type.free_variables
+          raise "#{name} cannot include 'self' type: #{type}" if fvs.include?(AST::Types::Self.instance)
+
+          if fvs.include?(AST::Types::Instance.instance)
+            Steep.logger.fatal { "#{name} cannot include 'instance' type: #{type}" }
+            raise "#{name} cannot include 'instance' type: #{type}"
           end
+          return unless fvs.include?(AST::Types::Class.instance)
+
+          raise "#{name} cannot include 'class' type: #{type}"
         end
 
         def upper_bound(a)
@@ -70,21 +69,17 @@ module Steep
             # Optimization that skips unnecessary substitution
             if type.free_variables.include?(AST::Types::Self.instance)
               shape
+            elsif s = config.subst
+              shape.subst(s)
             else
-              if s = config.subst
-                shape.subst(s)
-              else
-                shape
-              end
+              shape
             end
           end
         end
       end
 
       def fetch_cache(cache, key)
-        if cache.key?(key)
-          return cache.fetch(key)
-        end
+        return cache.fetch(key) if cache.key?(key)
 
         cache[key] = yield
       end
@@ -118,14 +113,14 @@ module Steep
             end
           end
 
-          shapes = [] #: Array[Shape]
+          shapes = [] # : Array[Shape]
           groups.each do |name, types|
             if name
               union = AST::Types::Union.build(types: types)
               subst = class_subst(name).update(self_type: union)
               shapes << object_shape(name.name).subst(subst, type: union)
             else
-              shapes.concat(types.map {|ty| raw_shape(ty, config) or return })
+              shapes.concat(types.map { |ty| raw_shape(ty, config) or return })
             end
           end
 
@@ -148,11 +143,11 @@ module Steep
           object_shape(instance_type.name).subst(subst, type: type)
         when AST::Types::Boolean
           true_shape =
-            (object_shape(RBS::BuiltinNames::TrueClass.name)).
-              subst(class_subst(AST::Builtin::TrueClass.instance_type).update(self_type: type))
+            object_shape(RBS::BuiltinNames::TrueClass.name)
+            .subst(class_subst(AST::Builtin::TrueClass.instance_type).update(self_type: type))
           false_shape =
-            (object_shape(RBS::BuiltinNames::FalseClass.name)).
-              subst(class_subst(AST::Builtin::FalseClass.instance_type).update(self_type: type))
+            object_shape(RBS::BuiltinNames::FalseClass.name)
+            .subst(class_subst(AST::Builtin::FalseClass.instance_type).update(self_type: type))
           union_shape(type, [true_shape, false_shape])
         when AST::Types::Proc
           shape = object_shape(AST::Builtin::Proc.module_name).subst(class_subst(AST::Builtin::Proc.instance_type).update(self_type: type))
@@ -182,11 +177,11 @@ module Steep
           object_shape(AST::Builtin::NilClass.module_name).subst(subst, type: type)
         when AST::Types::Logic::Base
           true_shape =
-            (object_shape(RBS::BuiltinNames::TrueClass.name)).
-              subst(class_subst(AST::Builtin::TrueClass.instance_type).update(self_type: type))
+            object_shape(RBS::BuiltinNames::TrueClass.name)
+            .subst(class_subst(AST::Builtin::TrueClass.instance_type).update(self_type: type))
           false_shape =
-            (object_shape(RBS::BuiltinNames::FalseClass.name)).
-              subst(class_subst(AST::Builtin::FalseClass.instance_type).update(self_type: type))
+            object_shape(RBS::BuiltinNames::FalseClass.name)
+            .subst(class_subst(AST::Builtin::FalseClass.instance_type).update(self_type: type))
           union_shape(type, [true_shape, false_shape])
         else
           nil
@@ -213,11 +208,11 @@ module Steep
           object_shape(instance_type.name).subst(subst, type: type)
         when AST::Types::Boolean
           true_shape =
-            (object_shape(RBS::BuiltinNames::TrueClass.name)).
-              subst(class_subst(AST::Builtin::TrueClass.instance_type).update(self_type: nil))
+            object_shape(RBS::BuiltinNames::TrueClass.name)
+            .subst(class_subst(AST::Builtin::TrueClass.instance_type).update(self_type: nil))
           false_shape =
-            (object_shape(RBS::BuiltinNames::FalseClass.name)).
-              subst(class_subst(AST::Builtin::FalseClass.instance_type).update(self_type: nil))
+            object_shape(RBS::BuiltinNames::FalseClass.name)
+            .subst(class_subst(AST::Builtin::FalseClass.instance_type).update(self_type: nil))
           union_shape(type, [true_shape, false_shape])
         when AST::Types::Proc
           shape = object_shape(AST::Builtin::Proc.module_name).subst(class_subst(AST::Builtin::Proc.instance_type).update(self_type: nil))
@@ -232,9 +227,7 @@ module Steep
       end
 
       def app_subst(type)
-        if type.args.empty?
-          return Substitution.empty
-        end
+        return Substitution.empty if type.args.empty?
 
         vars =
           case type
@@ -282,12 +275,15 @@ module Steep
                 method_name = method_name_for(type_def, name)
                 method_type = factory.method_type(type_def.type)
                 method_type = replace_primitive_method(method_name, type_def, method_type)
-                method_type = replace_kernel_class(method_name, type_def, method_type) { AST::Builtin::Class.instance_type }
+                method_type = replace_kernel_class(method_name, type_def, method_type) do
+                  AST::Builtin::Class.instance_type
+                end
                 method_type = add_implicitly_returns_nil(type_def.annotations, method_type)
                 Shape::MethodOverload.new(method_type, [type_def])
               end
 
-              shape.methods[name] = Interface::Shape::Entry.new(method_name: name, private_method: method.private?, overloads: overloads)
+              shape.methods[name] =
+                Interface::Shape::Entry.new(method_name: name, private_method: method.private?, overloads: overloads)
             end
           end
 
@@ -299,10 +295,9 @@ module Steep
         object_shape_cache[type_name] ||= begin
           shape = Interface::Shape.new(type: AST::Builtin.bottom_type, private: true)
 
-          case
-          when type_name.class?
+          if type_name.class?
             definition = factory.definition_builder.build_instance(type_name)
-          when type_name.interface?
+          elsif type_name.interface?
             definition = factory.definition_builder.build_interface(type_name)
           end
 
@@ -315,13 +310,16 @@ module Steep
                 method_type = factory.method_type(type_def.type)
                 method_type = replace_primitive_method(method_name, type_def, method_type)
                 if type_name.class?
-                  method_type = replace_kernel_class(method_name, type_def, method_type) { AST::Types::Name::Singleton.new(name: type_name) }
+                  method_type = replace_kernel_class(method_name, type_def, method_type) do
+                    AST::Types::Name::Singleton.new(name: type_name)
+                  end
                 end
                 method_type = add_implicitly_returns_nil(type_def.annotations, method_type)
                 Shape::MethodOverload.new(method_type, [type_def])
               end
 
-              shape.methods[name] = Interface::Shape::Entry.new(method_name: name, private_method: method.private?, overloads: overloads)
+              shape.methods[name] =
+                Interface::Shape::Entry.new(method_name: name, private_method: method.private?, overloads: overloads)
             end
           end
 
@@ -339,7 +337,7 @@ module Steep
 
         shape = Interface::Shape.new(type: shape_type, private: true)
         all_common_methods.each do |method_name|
-          overloadss = [] #: Array[Array[Shape::MethodOverload]]
+          overloadss = [] # : Array[Array[Shape::MethodOverload]]
           private_method = false
           shapes.each do |shape|
             entry = shape.methods[method_name] || raise
@@ -358,23 +356,19 @@ module Steep
                 defs1 = overloads1.flat_map(&:method_defs)
                 defs2 = overloads2.flat_map(&:method_defs)
 
-                if defs1 == defs2
-                  next overloads1
-                end
+                next overloads1 if defs1 == defs2
               end
 
-              method_overloads = {} #: Hash[Shape::MethodOverload, bool]
+              method_overloads = {} # : Hash[Shape::MethodOverload, bool]
 
               overloads1.each do |overload1|
                 overloads2.each do |overload2|
                   if overload1.method_type == overload2.method_type
                     overload = Shape::MethodOverload.new(overload1.method_type, overload1.method_defs + overload2.method_defs)
                     method_overloads[overload] = true
-                  else
-                    if type = MethodType.union(overload1.method_type, overload2.method_type, subtyping)
-                      overload = Shape::MethodOverload.new(type, overload1.method_defs + overload2.method_defs)
-                      method_overloads[overload] = true
-                    end
+                  elsif type = MethodType.union(overload1.method_type, overload2.method_type, subtyping)
+                    overload = Shape::MethodOverload.new(type, overload1.method_defs + overload2.method_defs)
+                    method_overloads[overload] = true
                   end
                 end
               end
@@ -443,7 +437,7 @@ module Steep
           Shape::Entry.new(
             method_name: :[],
             private_method: false,
-            overloads: tuple.types.map.with_index {|elem_type, index|
+            overloads: tuple.types.map.with_index { |elem_type, index|
               Shape::MethodOverload.new(
                 MethodType.new(
                   type_params: [],
@@ -466,7 +460,7 @@ module Steep
           Shape::Entry.new(
             method_name: :[]=,
             private_method: false,
-            overloads: tuple.types.map.with_index {|elem_type, index|
+            overloads: tuple.types.map.with_index { |elem_type, index|
               Shape::MethodOverload.new(
                 MethodType.new(
                   type_params: [],
@@ -489,7 +483,7 @@ module Steep
           Shape::Entry.new(
             method_name: :fetch,
             private_method: false,
-            overloads: tuple.types.flat_map.with_index {|elem_type, index|
+            overloads: tuple.types.flat_map.with_index { |elem_type, index|
               [
                 MethodType.new(
                   type_params: [],
@@ -501,7 +495,8 @@ module Steep
                   block: nil
                 ),
                 MethodType.new(
-                  type_params: [TypeParam.new(name: :T, upper_bound: nil, variance: :invariant, unchecked: false, default_type: nil)],
+                  type_params: [TypeParam.new(name: :T, upper_bound: nil, variance: :invariant, unchecked: false,
+                                              default_type: nil)],
                   type: Function.new(
                     params: Function::Params.build(
                       required: [
@@ -515,7 +510,8 @@ module Steep
                   block: nil
                 ),
                 MethodType.new(
-                  type_params: [TypeParam.new(name: :T, upper_bound: nil, variance: :invariant, unchecked: false, default_type: nil)],
+                  type_params: [TypeParam.new(name: :T, upper_bound: nil, variance: :invariant, unchecked: false,
+                                              default_type: nil)],
                   type: Function.new(
                     params: Function::Params.build(required: [AST::Types::Literal.new(value: index)]),
                     return_type: AST::Types::Union.build(types: [elem_type, AST::Types::Var.new(name: :T)]),
@@ -589,7 +585,7 @@ module Steep
 
       def record_shape(record)
         all_key_type = AST::Types::Union.build(
-          types: record.elements.each_key.map {|value| AST::Types::Literal.new(value: value).back_type }
+          types: record.elements.each_key.map { |value| AST::Types::Literal.new(value: value).back_type }
         )
         all_value_type = AST::Types::Union.build(types: record.elements.values)
         hash_type = AST::Builtin::Hash.instance_type(all_key_type, all_value_type)
@@ -606,9 +602,7 @@ module Steep
             overloads: record.elements.map do |key_value, value_type|
               key_type = AST::Types::Literal.new(value: key_value)
 
-              if record.optional?(key_value)
-                value_type = AST::Builtin.optional(value_type)
-              end
+              value_type = AST::Builtin.optional(value_type) if record.optional?(key_value)
 
               Shape::MethodOverload.new(
                 MethodType.new(
@@ -640,7 +634,8 @@ module Steep
                   type: Function.new(
                     params: Function::Params.build(required: [key_type, value_type]),
                     return_type: value_type,
-                    location: nil),
+                    location: nil
+                  ),
                   block: nil
                 ),
                 []
@@ -655,7 +650,7 @@ module Steep
           Shape::Entry.new(
             method_name: :fetch,
             private_method: false,
-            overloads: record.elements.flat_map {|key_value, value_type|
+            overloads: record.elements.flat_map { |key_value, value_type|
               key_type = AST::Types::Literal.new(value: key_value)
 
               [
@@ -669,7 +664,8 @@ module Steep
                   block: nil
                 ),
                 MethodType.new(
-                  type_params: [TypeParam.new(name: :T, upper_bound: nil, variance: :invariant, unchecked: false, default_type: nil)],
+                  type_params: [TypeParam.new(name: :T, upper_bound: nil, variance: :invariant, unchecked: false,
+                                              default_type: nil)],
                   type: Function.new(
                     params: Function::Params.build(required: [key_type, AST::Types::Var.new(name: :T)]),
                     return_type: AST::Types::Union.build(types: [value_type, AST::Types::Var.new(name: :T)]),
@@ -678,7 +674,8 @@ module Steep
                   block: nil
                 ),
                 MethodType.new(
-                  type_params: [TypeParam.new(name: :T, upper_bound: nil, variance: :invariant, unchecked: false, default_type: nil)],
+                  type_params: [TypeParam.new(name: :T, upper_bound: nil, variance: :invariant, unchecked: false,
+                                              default_type: nil)],
                   type: Function.new(
                     params: Function::Params.build(required: [key_type]),
                     return_type: AST::Types::Union.build(types: [value_type, AST::Types::Var.new(name: :T)]),
@@ -732,13 +729,14 @@ module Steep
         if member.is_a?(RBS::AST::Members::MethodDefinition)
           case method_name.method_name
           when :is_a?, :kind_of?, :instance_of?
+            puts "Carl tablante: #{member}"
             case
             when RBS::BuiltinNames::Object.name,
               RBS::BuiltinNames::Kernel.name
               if member.instance?
                 return method_type.with(
                   type: method_type.type.with(
-                    return_type: AST::Types::Logic::ReceiverIsArg.instance()
+                    return_type: AST::Types::Logic::ReceiverIsArg.instance
                   )
                 )
               end
@@ -752,7 +750,7 @@ module Steep
               if member.instance?
                 return method_type.with(
                   type: method_type.type.with(
-                    return_type: AST::Types::Logic::ReceiverIsNil.instance()
+                    return_type: AST::Types::Logic::ReceiverIsNil.instance
                   )
                 )
               end
@@ -766,7 +764,7 @@ module Steep
               AST::Builtin::NilClass.module_name
               return method_type.with(
                 type: method_type.type.with(
-                  return_type: AST::Types::Logic::Not.instance()
+                  return_type: AST::Types::Logic::Not.instance
                 )
               )
             end
@@ -776,7 +774,7 @@ module Steep
             when RBS::BuiltinNames::Module.name
               return method_type.with(
                 type: method_type.type.with(
-                  return_type: AST::Types::Logic::ArgIsReceiver.instance()
+                  return_type: AST::Types::Logic::ArgIsReceiver.instance
                 )
               )
             when RBS::BuiltinNames::Object.name,
@@ -786,11 +784,11 @@ module Steep
               RBS::BuiltinNames::Symbol.name,
               RBS::BuiltinNames::TrueClass.name,
               RBS::BuiltinNames::FalseClass.name,
-              RBS::TypeName.parse("::NilClass")
+              RBS::TypeName.parse('::NilClass')
               # Value based type-case works on literal types which is available for String, Integer, Symbol, TrueClass, FalseClass, and NilClass
               return method_type.with(
                 type: method_type.type.with(
-                  return_type: AST::Types::Logic::ArgEqualsReceiver.instance()
+                  return_type: AST::Types::Logic::ArgEqualsReceiver.instance
                 )
               )
             end
@@ -799,7 +797,7 @@ module Steep
             when RBS::BuiltinNames::Module.name
               return method_type.with(
                 type: method_type.type.with(
-                  return_type: AST::Types::Logic::ArgIsAncestor.instance()
+                  return_type: AST::Types::Logic::ArgIsAncestor.instance
                 )
               )
             end
@@ -829,10 +827,11 @@ module Steep
       def add_implicitly_returns_nil(annotations, method_type)
         return method_type unless implicitly_returns_nil
 
-        if annotations.find { _1.string == "implicitly-returns-nil" }
+        if annotations.find { _1.string == 'implicitly-returns-nil' }
           return_type = method_type.type.return_type
           method_type = method_type.with(
-            type: method_type.type.with(return_type: AST::Types::Union.build(types: [return_type, AST::Builtin.nil_type]))
+            type: method_type.type.with(return_type: AST::Types::Union.build(types: [return_type,
+                                                                                     AST::Builtin.nil_type]))
           )
         else
           method_type

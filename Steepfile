@@ -37,6 +37,13 @@ target :app do
   end
 end
 
+target :sample do
+  collection_config "rbs_collection.steep.yaml"
+
+  check "sample/"
+  signature "sample/sig"
+end
+
 target :test do
   collection_config "rbs_collection.steep.yaml"
 

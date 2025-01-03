@@ -7,10 +7,11 @@ gem "rake"
 gem "minitest", "~> 5.25"
 gem "minitest-hooks"
 gem 'minitest-slow_test'
+gem 'ruby-lsp'
+gem "debug", require: false
 
 group :development, optional: true do
   gem "stackprof"
-  gem "debug", require: false, platform: :mri
   gem "vernier", "~> 1.4", require: false, platform: :mri
   gem "memory_profiler"
   gem "majo"

@@ -3210,6 +3210,8 @@ module Steep
     def type_send_interface(node, interface:, receiver:, receiver_type:, method_name:, arguments:, block_params:, block_body:, tapp:, hint:)
       method = interface.methods[method_name]
 
+      # puts interface.methods.inspect
+
       if method
         call, constr = type_method_call(
           node,
@@ -3340,6 +3342,7 @@ module Steep
           end
         end
 
+        # puts receiver_type
         constr.add_call(
           TypeInference::MethodCall::NoMethodError.new(
             node: node,

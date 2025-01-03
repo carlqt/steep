@@ -17,9 +17,7 @@ module Steep
         end
       end
 
-      attr_reader :subtyping
-      attr_reader :typing
-      attr_reader :config
+      attr_reader :subtyping, :typing, :config
 
       def initialize(subtyping:, typing:, config:)
         @subtyping = subtyping
@@ -32,18 +30,20 @@ module Steep
       end
 
       def guess_type_from_method(node)
-        if node.type == :send
-          method = node.children[1]
-          case method
-          when :is_a?, :kind_of?, :instance_of?
-            AST::Types::Logic::ReceiverIsArg.instance
-          when :nil?
-            AST::Types::Logic::ReceiverIsNil.instance
-          when :!
-            AST::Types::Logic::Not.instance
-          when :===
-            AST::Types::Logic::ArgIsReceiver.instance
-          end
+        puts "Entering: #{node}"
+        return unless node.type == :send
+
+        method = node.children[1]
+        case method
+        when :is_a?, :kind_of?, :instance_of?
+          puts "Special: #{node}"
+          AST::Types::Logic::ReceiverIsArg.instance
+        when :nil?
+          AST::Types::Logic::ReceiverIsNil.instance
+        when :!
+          AST::Types::Logic::Not.instance
+        when :===
+          AST::Types::Logic::ArgIsReceiver.instance
         end
       end
 
@@ -73,13 +73,11 @@ module Steep
         if type.is_a?(AST::Types::Bot)
           return [
             Result.new(env: env, type: type, unreachable: true),
-            Result.new(env: env, type: type, unreachable: true),
+            Result.new(env: env, type: type, unreachable: true)
           ]
         end
 
-        if type.is_a?(AST::Types::Var)
-          type = config.upper_bound(type.name) || type
-        end
+        type = config.upper_bound(type.name) || type if type.is_a?(AST::Types::Var)
 
         case node.type
         when :lvar
@@ -88,14 +86,16 @@ module Steep
 
           truthy_result =
             if truthy_type
-              Result.new(type: truthy_type, env: env.refine_types(local_variable_types: { name => truthy_type }), unreachable: false)
+              Result.new(type: truthy_type, env: env.refine_types(local_variable_types: { name => truthy_type }),
+                         unreachable: false)
             else
               Result.new(type: type, env: env, unreachable: true)
             end
 
           falsy_result =
             if falsy_type
-              Result.new(type: falsy_type, env: env.refine_types(local_variable_types: { name => falsy_type }), unreachable: false)
+              Result.new(type: falsy_type, env: env.refine_types(local_variable_types: { name => falsy_type }),
+                         unreachable: false)
             else
               Result.new(type: type, env: env, unreachable: true)
             end
@@ -132,15 +132,13 @@ module Steep
           return evaluate_node(env: env, node: last_node)
 
         when :csend
-          if type.is_a?(AST::Types::Any)
-            type = guess_type_from_method(node) || type
-          end
+          type = guess_type_from_method(node) || type if type.is_a?(AST::Types::Any)
 
           receiver, _, *arguments = node.children
           receiver_type = typing.type_of(node: receiver)
 
           truthy_receiver, falsy_receiver = evaluate_node(env: env, node: receiver)
-          truthy_type, _ = factory.partition_union(type)
+          truthy_type, = factory.partition_union(type)
 
           truthy_result, falsy_result = evaluate_node(
             env: truthy_receiver.env,
@@ -158,14 +156,13 @@ module Steep
           return [truthy_result, falsy_result]
 
         when :send
-          if type.is_a?(AST::Types::Any)
-            type = guess_type_from_method(node) || type
-          end
+          type = guess_type_from_method(node) || type if type.is_a?(AST::Types::Any)
 
           case type
           when AST::Types::Logic::Base
             receiver, _, *arguments = node.children
-            if (truthy_result, falsy_result = evaluate_method_call(env: env, type: type, receiver: receiver, arguments: arguments))
+            if (truthy_result, falsy_result = evaluate_method_call(env: env, type: type, receiver: receiver,
+                                                                   arguments: arguments))
               return [truthy_result, falsy_result]
             end
           else
@@ -174,14 +171,16 @@ module Steep
 
               truthy_result =
                 if truthy_type
-                  Result.new(type: truthy_type, env: env.refine_types(pure_call_types: { node => truthy_type }), unreachable: false)
+                  Result.new(type: truthy_type, env: env.refine_types(pure_call_types: { node => truthy_type }),
+                             unreachable: false)
                 else
                   Result.new(type: type, env: env, unreachable: true)
                 end
 
               falsy_result =
                 if falsy_type
-                  Result.new(type: falsy_type, env: env.refine_types(pure_call_types: { node => falsy_type }), unreachable: false)
+                  Result.new(type: falsy_type, env: env.refine_types(pure_call_types: { node => falsy_type }),
+                             unreachable: false)
                 else
                   Result.new(type: type, env: env, unreachable: true)
                 end
@@ -192,7 +191,7 @@ module Steep
         end
 
         truthy_type, falsy_type = factory.partition_union(type)
-        return [
+        [
           Result.new(type: truthy_type || BOT, env: env, unreachable: truthy_type.nil?),
           Result.new(type: falsy_type || BOT, env: env, unreachable: falsy_type.nil?)
         ]
@@ -201,16 +200,16 @@ module Steep
       def evaluate_assignment(assignment_node, env, rhs_type)
         case assignment_node.type
         when :lvasgn
-          name, _ = assignment_node.children
+          name, = assignment_node.children
           if TypeConstruction::SPECIAL_LVAR_NAMES.include?(name)
             env
           else
             env.refine_types(local_variable_types: { name => rhs_type })
           end
         when :masgn
-          lhs, _ = assignment_node.children
+          lhs, = assignment_node.children
 
-          masgn = MultipleAssignment.new()
+          masgn = MultipleAssignment.new
           assignments = masgn.expand(lhs, rhs_type, false)
           unless assignments
             rhs_type_converted = try_convert(rhs_type, :to_ary)
@@ -220,7 +219,7 @@ module Steep
           end
 
           unless assignments
-            raise "Multiple assignment rhs doesn't look correct: #{rhs_type.to_s} (#{assignment_node.location.expression&.source_line})"
+            raise "Multiple assignment rhs doesn't look correct: #{rhs_type} (#{assignment_node.location.expression&.source_line})"
           end
 
           assignments.each do |pair|
@@ -251,7 +250,8 @@ module Steep
         when :lvasgn
           name, rhs = node.children
 
-          truthy_env, falsy_env = refine_node_type(env: env, node: rhs, truthy_type: truthy_type, falsy_type: falsy_type)
+          truthy_env, falsy_env = refine_node_type(env: env, node: rhs, truthy_type: truthy_type,
+                                                   falsy_type: falsy_type)
 
           if TypeConstruction::SPECIAL_LVAR_NAMES.include?(name)
             [truthy_env, falsy_env]
@@ -478,8 +478,7 @@ module Steep
             types.each_with_object(pairs) do |type, pair|
               true_types, false_types = pair
 
-              case
-              when type.is_a?(AST::Types::Literal)
+              if type.is_a?(AST::Types::Literal)
                 if type.value == value_node.children[0]
                   true_types << type
                 else
@@ -509,7 +508,7 @@ module Steep
         case type
         when AST::Types::Union
           truthy_types = [] # :Array[AST::Types::t]
-          falsy_types = [] #: Array[AST::Types::t]
+          falsy_types = [] # : Array[AST::Types::t]
 
           type.types.each do |ty|
             truths, falses = type_case_select0(ty, klass)
@@ -565,31 +564,30 @@ module Steep
               [type],
               []
             ]
+          elsif subtyping?(sub_type: instance_type, super_type: type)
+            [
+              [instance_type],
+              [type]
+            ]
+          # 3. Satisfied the condition, narrows to `instance_type`, but cannot remove it from *falsy* list
           else
-            if subtyping?(sub_type: instance_type, super_type: type)
-              # 3. Satisfied the condition, narrows to `instance_type`, but cannot remove it from *falsy* list
-              [
-                [instance_type],
-                [type]
-              ]
-            else
-              # 4
-              [
-                [],
-                [type]
-              ]
-            end
+            # 4
+            [
+              [],
+              [type]
+            ]
           end
         end
       end
 
       def no_subtyping?(sub_type:, super_type:)
         relation = Subtyping::Relation.new(sub_type: sub_type, super_type: super_type)
-        result = subtyping.check(relation, constraints: Subtyping::Constraints.empty, self_type: AST::Types::Self.instance, instance_type: AST::Types::Instance.instance, class_type: AST::Types::Class.instance)
+        result = subtyping.check(relation, constraints: Subtyping::Constraints.empty,
+                                           self_type: AST::Types::Self.instance, instance_type: AST::Types::Instance.instance, class_type: AST::Types::Class.instance)
 
-        if result.failure?
-          result
-        end
+        return unless result.failure?
+
+        result
       end
 
       def subtyping?(sub_type:, super_type:)
@@ -597,16 +595,15 @@ module Steep
       end
 
       def try_convert(type, method)
-        if shape = subtyping.builder.shape(type, config)
-          if entry = shape.methods[method]
-            method_type = entry.method_types.find do |method_type|
-              method_type.type.params.nil? ||
-                method_type.type.params.optional?
-            end
+        return unless shape = subtyping.builder.shape(type, config)
+        return unless entry = shape.methods[method]
 
-            method_type.type.return_type if method_type
-          end
+        method_type = entry.method_types.find do |method_type|
+          method_type.type.params.nil? ||
+            method_type.type.params.optional?
         end
+
+        method_type.type.return_type if method_type
       end
     end
   end

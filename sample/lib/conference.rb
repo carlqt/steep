@@ -7,29 +7,16 @@ class Conference
     @title = title
     @year = year
   end
-end
 
-Conference.new()
+  def run(input)
+    if input.respond_to?(:foo) && input.respond_to?(:bar)
+      "Input is a length -> #{input.foo}:#{input.bar}"
+    end
 
-Konference.new()
+    if input.is_a?(String)
+      input.upcase
+    end
 
-
-
-# @type var foo: Konference
-
-foo = Conference.new
-
-class Conference12
-  class Integer
+    return "Input is a string"
   end
 end
-
-class HogeHoge
-  def foo(...)
-    bar(self, ...).to_s
-  end
-end
-
-
-conference = nil #: Conference?
-
